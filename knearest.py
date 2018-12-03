@@ -4,91 +4,104 @@ Created on Sat Dec  1 07:19:14 2018
 
 @author: Diko
 """
-
+from csv import reader
+from sys import exit
+from math import sqrt
+from operator import itemgetter
 import numpy as np
-import math
-import operator
-from sklearn import datasets
+import csv
+import os
 
-class KnnBase(object):
-	def __init__(self, k, weights=None):
-		self.k = k
-		self.weights = weights
+def load_data_set(filename): #load file csv
+    try:
+        with open(filename, newline='') as iris:
+            return list(reader(iris, delimiter=','))
+    except FileNotFoundError as e:
+        raise e
+        
+def convert_data(data,filename): #Hapus index,header pada datatugas
+    data_file = open(filename, 'wt', newline ='')
+    with data_file:
+        writer = csv.writer(data_file, delimiter=',')
+        writer.writerows(data)
+        
+def convert_to_float(data_set, mode): #masukkan csv ke array
+    new_set = []
+    if mode == 'training':
+        for data in data_set:
+            new_set.append([float(x) for x in data[:len(data)-1]] + [data[len(data)-1]])
+    elif mode == 'test':
+        for data in data_set:
+            new_set.append([float(x) for x in data])
+    else:
+        print('Invalid mode, program will exit.')
+        exit()
+    return new_set
 
-	def euclidean_distance(self, data_point1, data_point2):
-		if len(data_point1) != len(data_point2) :
-			raise ValueError('feature length not matching')
-		else:
-			distance = 0
-			for x in range(len(data_point1)):
-				distance += pow((data_point1[x] - data_point2[x]), 2)
-			return math.sqrt(distance)
-	def fit(self, train_feature, train_label):
-		self.train_feature = train_feature
-		self.train_label = train_label
+def get_classes(training_set): #Mendapatkan nilai Y pada datatrain
+    return list(set([c[-1] for c in training_set]))
 
-	def get_neighbors(self, train_set_data_points, test_feature_data_point, k):
-		distances = []
-		length = len(test_feature_data_point)-1
-		for index in range(len(train_set_data_points)):
-			dist = self.euclidean_distance(test_feature_data_point, train_set_data_points[index])
-			distances.append((train_set_data_points[index], dist, index))
-		distances.sort(key=operator.itemgetter(1))
-		neighbors = []
-		for index in range(k):
-			neighbors.append(distances[index][2])
-		return neighbors      
-       
-class KnnClassifier(KnnBase):
+def find_neighbors(distances, k): #mendapatkan neighbor 
+    return distances[0:k] 
 
-	def predict(self, test_feature_data_point):
-		# get the index of all nearest neighbouring data points
-		nearest_data_point_index = self.get_neighbors(self.train_feature, test_feature_data_point, self.k)
-		vote_counter = {}
-		# to count votes for each class initialise all class with zero votes
-		print('Nearest Data point index ', nearest_data_point_index)
-		for label in set(self.train_label):
-			vote_counter[label] = 0
-		# add count to class that are present in the nearest neighbors data points
-		for class_index in nearest_data_point_index:
-			closest_lable = self.train_label[class_index]
-			vote_counter[closest_lable] += 1
-		print('Nearest data point count', vote_counter)
-		# return the class that has most votes
-		return max(vote_counter.items(), key = operator.itemgetter(1))[0]
+def find_response(neighbors, classes):
+    votes = [0] * len(classes)
+    for instance in neighbors:
+        for ctr, c in enumerate(classes):
+            if instance[-2] == c:
+                votes[ctr] += 1
+    return max(enumerate(votes), key=itemgetter(1))
 
-class KnnRegression(KnnBase):
+def knn(training_set, test_set, k):
+    distances = [] #array untuk menampung nilai jarak
+    temp = [] #array untuk menampung output
+    dist = 0 #variabel jarak
+    limit = len(training_set[0]) - 1 #mencari nilai Y
+    # generate response classes from training data
+    classes = get_classes(training_set)
+    for test_instance in test_set: 
+        for row in training_set:
+            for x, y in zip(row[:limit], test_instance):
+                dist += (x-y) * (x-y)     #loop untuk mencari nilai jarak          
+            distances.append(row + [sqrt(dist)])
+            dist = 0    
+        distances.sort(key=itemgetter(len(distances[0])-1))
+        # find k nearest neighbors
+        neighbors = find_neighbors(distances, k)
+        # get the class with maximum votes
+        index, value = find_response(neighbors, classes)
+        temp.append([str(test_instance),classes[index]]) #menampung output ke array yg telah dibuat
+        distances.clear()
 
-	def predict(self, test_feature_data_point):
-		nearest_data_point_index = self.get_neighbors(self.train_feature, test_feature_data_point, self.k)
-		total_val = 0.0
-		# calculate the sum of all the label values
-		for index in nearest_data_point_index:
-			total_val += self.train_label[index]
+    with open('TebakanTugas3.csv', 'w+') as f: #write array ke file
+        for item in temp:
+            f.write("%s\n" % item)
+    print(temp)
+        
+#mengambil data dari file csv dgn lib dari numpy
+data_train = np.genfromtxt('DataTrain_Tugas3_AI.csv', delimiter=',', skip_header=1) 
+data_test  = np.genfromtxt('DataTest_Tugas3_AI.csv', delimiter=',', skip_header=1)
 
-		return total_val/self.k
+#memilih column yang ingin diambil
+indexRemovedTrain = data_train[:,1:7] #column ke 1 hingga 7 dengan semua row
+indexRemovedTest  = data_test[:,1:6] #column ke 1 hingga 6 dengan semua row
 
-def get_neighbors_v(train_set, test_set, k):
-	''' return k closet neighbour of test_set in training set'''
-	# calculate euclidean distance
-	euc_distance = np.sqrt(np.sum((train_set - test_set)**2 , axis=1))
-	# return the index of nearest neighbour
-	return np.argsort(euc_distance)[0:k]
+#mengubah data ke file csv sementara
+convert_data(indexRemovedTrain,'convertedtrain.csv') #mengubah data 
+convert_data(indexRemovedTest,'convertedtest.csv')
 
-def get_rmse(y, y_pred):
-	'''Root Mean Square Error
-	https://en.wikipedia.org/wiki/Root-mean-square_deviation
-	'''
-	mse = np.mean((y - y_pred)**2)
-	return np.sqrt(mse)
+k = int(input('Enter the value of k : ')) #user menentukan nilai K
 
-def get_mape(y, y_pred):
-	'''Mean Absolute Percent Error
-	https://en.wikipedia.org/wiki/Mean_absolute_percentage_error
-	'''
-	perc_err = (100*(y - y_pred))/y
-	return np.mean(abs(perc_err))
+# load the training and test data set
+#ubah file csv sementara ke dalam bentuk array
+training_set = convert_to_float(load_data_set('convertedtrain.csv'), 'training') 
+test_set = convert_to_float(load_data_set('convertedtest.csv'), 'test')
+if k > len(training_set):
+    print('Jumlah K yang ditentukan melebihi data training')
+else:
+    knn(training_set, test_set, k) #fungsi utama program
+#hapus file temporary
+os.remove("convertedtrain.csv")
+os.remove("convertedtest.csv")
 
-def get_accuracy(y, y_pred):
-	cnt = (y == y_pred).sum()
-	return round(cnt/len(y), 2)
+
